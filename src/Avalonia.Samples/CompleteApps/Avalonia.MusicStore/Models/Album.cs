@@ -23,9 +23,9 @@ namespace Avalonia.MusicStore.Models
             CoverUrl = coverUrl;
         }
 
-        public string Artist { get; set; }
-        public string Title { get; set; }
-        public string CoverUrl { get; set; }
+        public string Artist { get; init; }
+        public string Title { get; init; }
+        public string CoverUrl { get; init; }
         private string CachePath => $"./Cache/{SanitizeFileName(Artist)} - {SanitizeFileName(Title)}";
 
         /// <summary>
