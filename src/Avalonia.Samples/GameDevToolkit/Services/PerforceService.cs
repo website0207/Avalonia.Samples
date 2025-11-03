@@ -158,7 +158,6 @@ public class PerforceService
             var lines = output.Split('\n', StringSplitOptions.RemoveEmptyEntries);
             foreach (var line in lines)
             {
-                // 示例输出: Client aki_wangzhi_base 2024/12/02 16:23:41 root E:\aki_base 'Created by wangzhi.'
                 if (line.StartsWith("Client "))
                 {
                     // 使用正则表达式解析客户端信息
@@ -270,7 +269,6 @@ public class PerforceService
     {
         try
         {
-            // 示例: "Created by wangzhi."
             var match = System.Text.RegularExpressions.Regex.Match(description, @"Created by\s+([^\s\.]+)");
             if (match.Success)
             {
@@ -468,7 +466,7 @@ public class PerforceService
 
             if (process.ExitCode != 0)
             {
-                var errorMessage = error?.Trim();
+                var errorMessage = error.Trim();
                 if (string.IsNullOrEmpty(errorMessage))
                 {
                     onResult?.Invoke($"❌ Change {changeNumber} 不存在或无权访问");
@@ -526,7 +524,6 @@ public class PerforceService
             }
 
             // 解析change信息，获取所属客户端
-            // 格式示例: Change 5309159 on 2025/11/01 by wangzhi@aki_wangzhi_3.0 *pending* '描述'
             var changeLine = changeInfoOutput.Trim();
             if (!changeLine.Contains($"@{clientName}"))
             {
@@ -601,7 +598,7 @@ public class PerforceService
                 onResult?.Invoke($"\n🚀 处理第 {batchIndex + 1}/{totalBatches} 批 ({batch.Count} 个文件)...");
 
                 // 创建并发任务
-                var batchTasks = batch.Select(async depotPath =>
+                var batchTasks = batch.Select<string, Task<(string DepotPath, string? Error, ShelvedFile? Result, string? CSPath, string? TSPath, string? Changelist)>>(async depotPath =>
                 {
                     try
                     {
@@ -609,7 +606,7 @@ public class PerforceService
                         var pathInfo = await GetFilePathsAsync(depotPath, clientName);
                         if (pathInfo == null)
                         {
-                            return new { DepotPath = depotPath, Error = "无法获取路径信息", Result = (ShelvedFile?)null, CSPath = (string?)null, TSPath = (string?)null, Changelist = (string?)null };
+                            return (depotPath, "无法获取路径信息", null, null, null, null);
                         }
 
                         var csLocalPath = pathInfo.Value.LocalPath;
@@ -628,18 +625,11 @@ public class PerforceService
                             LocalPath = csLocalPath
                         };
 
-                        return new {
-                            DepotPath = depotPath,
-                            Error = (string?)null,
-                            Result = shelvedFile,
-                            CSPath = csLocalPath,
-                            TSPath = tsLocalPath,
-                            Changelist = changelistResult.IsSuccess ? changelistResult.Changelist : changelistResult.ErrorMessage
-                        };
+                        return (depotPath, null, shelvedFile, csLocalPath, tsLocalPath, changelistResult.IsSuccess ? changelistResult.Changelist : changelistResult.ErrorMessage);
                     }
                     catch (Exception ex)
                     {
-                        return new { DepotPath = depotPath, Error = ex.Message, Result = (ShelvedFile?)null, CSPath = (string?)null, TSPath = (string?)null, Changelist = (string?)null };
+                        return (depotPath, ex.Message, null, null, null, null);
                     }
                 }).ToArray();
 
@@ -661,7 +651,7 @@ public class PerforceService
                         onResult?.Invoke($"✅ CS路径: {result.CSPath}");
                         onResult?.Invoke($"🔄 对应TS路径: {result.TSPath}");
 
-                        if (result.Changelist.All(char.IsDigit))
+                        if (result.Changelist is not null && result.Changelist.All(char.IsDigit))
                         {
                             onResult?.Invoke($"📝 TS文件最新Changelist: {result.Changelist}");
 
@@ -845,7 +835,6 @@ public class PerforceService
             if (process.ExitCode != 0) return null;
 
             // 解析 p4 where 输出
-            // 格式示例: //aki/branch_3.0/Source/Client/CSharpScript/CSharpScript/Core/Audio/AudioSystem.cs //aki_wangzhi_branch3.0/Source/Client/CSharpScript/CSharpScript/Core/Audio/AudioSystem.cs E:\aki_branch3.0\Source\Client\CSharpScript\CSharpScript\Core\Audio\AudioSystem.cs
             var resultLine = output.Trim();
             var parts = resultLine.Split(' ', StringSplitOptions.RemoveEmptyEntries);
 
