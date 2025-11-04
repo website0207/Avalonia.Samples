@@ -1,0 +1,440 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:vm="using:GameDevToolkit.ViewModels"
+             xmlns:s="using:GameDevToolkit.Services"
+             xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+             xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+             mc:Ignorable="d" d:DesignWidth="600" d:DesignHeight="400"
+             x:Class="GameDevToolkit.Views.PerforceToolsView"
+             x:DataType="vm:PerforceToolsViewModel">
+
+    <Design.DataContext>
+        <vm:PerforceToolsViewModel />
+    </Design.DataContext>
+
+    <Grid Margin="20">
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="*" />
+        </Grid.RowDefinitions>
+
+        <!-- 标题 -->
+        <TextBlock Grid.Row="0" Text="Perforce 工具集"
+                   HorizontalAlignment="Center" FontSize="24" FontWeight="Bold"
+                   Margin="0,0,0,20"
+                   TextWrapping="Wrap" />
+
+        <!-- Perforce客户端选择 -->
+        <Border Grid.Row="1" Background="#F0F8FF" CornerRadius="6" Padding="15" Margin="0,0,0,20"
+                BorderBrush="#B0D4E1" BorderThickness="1">
+            <Grid>
+                <Grid.RowDefinitions>
+                    <RowDefinition Height="Auto" />
+                    <RowDefinition Height="Auto" />
+                </Grid.RowDefinitions>
+
+                <!-- 主要内容 -->
+                <Grid Grid.Row="0">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="Auto" />
+                        <ColumnDefinition Width="*" />
+                    </Grid.ColumnDefinitions>
+
+                    <!-- 客户端选择标签 -->
+                    <TextBlock Grid.Column="0" Text="Perforce客户端:"
+                               VerticalAlignment="Center" FontWeight="SemiBold"
+                               Margin="0,0,15,0" />
+
+                    <!-- 客户端下拉菜单 -->
+                    <ComboBox Grid.Column="1"
+                              ItemsSource="{Binding PerforceClients}"
+                              SelectedItem="{Binding SelectedClient}"
+                              PlaceholderText="选择Perforce客户端"
+                              HorizontalAlignment="Stretch"
+                              VerticalAlignment="Center"
+                              IsEnabled="{Binding !IsLoadingClients}">
+                        <ComboBox.ItemTemplate>
+                            <DataTemplate DataType="s:PerforceClient">
+                                <StackPanel Spacing="2">
+                                    <TextBlock Text="{Binding DisplayName}" FontWeight="SemiBold" />
+                                    <TextBlock Text="{Binding Owner}" FontSize="10" Opacity="0.6" />
+                                    <TextBlock Text="{Binding LastModified}" FontSize="9" Opacity="0.5" />
+                                </StackPanel>
+                            </DataTemplate>
+                        </ComboBox.ItemTemplate>
+                    </ComboBox>
+
+                </Grid>
+
+                <!-- 加载指示器 -->
+                <StackPanel Grid.Row="1" Spacing="5"
+                            IsVisible="{Binding IsLoadingClients}"
+                            Margin="0,10,0,0">
+                    <ProgressBar IsIndeterminate="True" Height="3" />
+                    <TextBlock Text="正在加载客户端列表..."
+                               HorizontalAlignment="Center"
+                               FontSize="12" Opacity="0.7" />
+                </StackPanel>
+            </Grid>
+        </Border>
+
+        <!-- TabControl -->
+        <TabControl Grid.Row="2" Classes="perforce-tools">
+            <TabItem Header="📄 TypeScript文件查询">
+                <ScrollViewer HorizontalScrollBarVisibility="Disabled" VerticalScrollBarVisibility="Auto">
+                    <StackPanel Margin="20" Spacing="20">
+                        <!-- 功能说明 -->
+                        <Border Background="#FFF8DC" CornerRadius="6" Padding="15"
+                                BorderBrush="#DEB887" BorderThickness="1">
+                            <StackPanel Spacing="10">
+                                <TextBlock Text="TypeScript文件Changelist查询"
+                                           FontWeight="Bold" FontSize="16" Foreground="#8B4513" />
+                                <TextBlock Text="根据TypeScript文件路径，查询对应的C#文件的最新changelist ID"
+                                           FontSize="12" Opacity="0.8" TextWrapping="Wrap" />
+                            </StackPanel>
+                        </Border>
+
+                        <!-- 输入区域 -->
+                        <Border Background="#FAFAFA" CornerRadius="6" Padding="15"
+                                BorderBrush="#D1D5DB" BorderThickness="1">
+                            <StackPanel Spacing="10">
+                                <TextBlock Text="TypeScript文件路径:" FontWeight="SemiBold" />
+                                <Grid>
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="*" />
+                                        <ColumnDefinition Width="Auto" />
+                                    </Grid.ColumnDefinitions>
+
+                                    <!-- 文件路径输入框 -->
+                                    <TextBox Grid.Column="0"
+                                             Text="{Binding FilePath, Mode=TwoWay}"
+                                             Watermark="选择或输入TypeScript文件的路径，例如: D:\Project\src\file.ts"
+                                             Height="40" FontFamily="Consolas"
+                                             Margin="0,0,10,0" />
+
+                                    <!-- 文件选择按钮 -->
+                                    <Button Grid.Column="1"
+                                            Content="浏览..."
+                                            Click="SelectFileButtonClick"
+                                            Width="80" Height="40"
+                                            HorizontalAlignment="Right" />
+                                </Grid>
+                            </StackPanel>
+                        </Border>
+
+                        <!-- 查询按钮 -->
+                        <StackPanel Spacing="10" HorizontalAlignment="Center">
+                            <Button Content="查询Changelist"
+                                    Command="{Binding GetChangelistCommand}"
+                                    HorizontalAlignment="Center"
+                                    Padding="30,15" FontSize="16"
+                                    Background="#4A90E2" Foreground="White"
+                                    IsEnabled="{Binding !IsProcessing}" />
+
+                            <!-- 加载指示器 -->
+                            <TextBlock Text="正在查询Perforce..."
+                                       HorizontalAlignment="Center"
+                                       FontSize="14"
+                                       Foreground="Gray"
+                                       IsVisible="{Binding IsProcessing}" />
+                        </StackPanel>
+
+                        <!-- 结果显示 -->
+                        <Border Background="#F5F5F5"
+                                CornerRadius="8" Padding="20"
+                                BorderBrush="#E0E0E0" BorderThickness="1">
+                            <StackPanel Spacing="10">
+                                <!-- 结果标题 -->
+                                <TextBlock Text="查询结果 (可选择复制):"
+                                           FontWeight="SemiBold" />
+
+                                <!-- 可选择的文本框 - 内置滚动 -->
+                                <TextBox Text="{Binding ChangelistResult}"
+                                         IsReadOnly="True"
+                                         TextWrapping="Wrap"
+                                         AcceptsReturn="True"
+                                         ScrollViewer.VerticalScrollBarVisibility="Auto"
+                                         ScrollViewer.HorizontalScrollBarVisibility="Disabled"
+                                         FontFamily="Consolas" FontSize="14"
+                                         Background="White"
+                                         BorderThickness="1"
+                                         BorderBrush="#D1D5DB"
+                                         Padding="10"
+                                         MinHeight="200"
+                                         Height="300" />
+                            </StackPanel>
+                        </Border>
+                    </StackPanel>
+                </ScrollViewer>
+            </TabItem>
+
+            <TabItem Header="🔄 Shelved Files处理">
+                <ScrollViewer>
+                    <Grid Margin="0,20,0,0">
+                        <Grid.RowDefinitions>
+                            <RowDefinition Height="Auto" />
+                            <RowDefinition Height="Auto" />
+                            <RowDefinition Height="Auto" />
+                            <RowDefinition Height="*" />
+                        </Grid.RowDefinitions>
+
+                        <!-- 功能说明 -->
+                        <Border Grid.Row="0" Background="#E6F3FF" CornerRadius="6" Padding="15" Margin="0,0,0,20"
+                                BorderBrush="#4A90E2" BorderThickness="2">
+                            <StackPanel Spacing="10">
+                                <TextBlock Text="Change号Shelved Files处理"
+                                           FontWeight="Bold" FontSize="16" Foreground="#0066CC" />
+                                <TextBlock Text="根据Perforce Change号，批量处理Shelved的C#文件，自动计算对应的TypeScript文件路径并写入最新的changelist信息"
+                                           FontSize="12" Opacity="0.8" TextWrapping="Wrap" />
+                            </StackPanel>
+                        </Border>
+
+                        <!-- 输入区域 -->
+                        <Border Grid.Row="1" Background="#FAFAFA" CornerRadius="6" Padding="15" Margin="0,0,0,20"
+                                BorderBrush="#D1D5DB" BorderThickness="1">
+                            <StackPanel Spacing="10">
+                                <TextBlock Text="输入Change号:" FontWeight="SemiBold" />
+                                <Grid>
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="*" />
+                                        <ColumnDefinition Width="Auto" />
+                                    </Grid.ColumnDefinitions>
+
+                                    <!-- Change号输入框 -->
+                                    <TextBox Grid.Column="0"
+                                             Text="{Binding ChangeNumber, Mode=TwoWay}"
+                                             Watermark="输入Perforce Change号，例如: 12345"
+                                             Height="40" FontFamily="Consolas"
+                                             Margin="0,0,10,0" />
+
+                                    <!-- 查询Shelved Files按钮 -->
+                                    <Button Grid.Column="1"
+                                            Content="查询Shelved Files"
+                                            Command="{Binding GetShelvedFilesCommand}"
+                                            Width="160" Height="40"
+                                            HorizontalAlignment="Right"
+                                            Background="#4A90E2" Foreground="White" />
+                                </Grid>
+                            </StackPanel>
+                        </Border>
+
+                        <!-- 状态显示 -->
+                        <Border Grid.Row="2" Background="#F0F9FF" CornerRadius="6" Padding="15" Margin="0,0,0,20"
+                                BorderBrush="#0EA5E9" BorderThickness="1"
+                                IsVisible="{Binding IsProcessingShelved}">
+                            <StackPanel Spacing="5">
+                                <ProgressBar IsIndeterminate="True" Height="4" />
+                                <TextBlock Text="{Binding ProcessingStatus}"
+                                           HorizontalAlignment="Center"
+                                           FontSize="12" Opacity="0.8" />
+                            </StackPanel>
+                        </Border>
+
+                        <!-- 结果显示 -->
+                        <Border Grid.Row="3" Background="#F5F5F5"
+                                CornerRadius="8" Padding="20"
+                                BorderBrush="#E0E0E0" BorderThickness="1">
+                            <Grid>
+                                <Grid.RowDefinitions>
+                                    <RowDefinition Height="Auto" />
+                                    <RowDefinition Height="*" />
+                                </Grid.RowDefinitions>
+
+                                <!-- 结果标题 -->
+                                <TextBlock Grid.Row="0" Text="处理结果 (可选择复制):"
+                                           FontWeight="SemiBold" Margin="0,0,0,5" />
+
+                                <!-- 可选择的文本框 -->
+                                <TextBox Grid.Row="1"
+                                         Text="{Binding ShelvedFilesResult}"
+                                         IsReadOnly="True"
+                                         TextWrapping="Wrap"
+                                         AcceptsReturn="True"
+                                         ScrollViewer.VerticalScrollBarVisibility="Auto"
+                                         ScrollViewer.HorizontalScrollBarVisibility="Disabled"
+                                         FontFamily="Consolas" FontSize="14"
+                                         Background="White"
+                                         BorderThickness="1"
+                                         BorderBrush="#D1D5DB"
+                                         Padding="10"
+                                         MinHeight="200"
+                                         MaxHeight="400" />
+                            </Grid>
+                        </Border>
+                    </Grid>
+                </ScrollViewer>
+            </TabItem>
+
+            <TabItem Header="📋 Changelist总结">
+                <ScrollViewer HorizontalScrollBarVisibility="Disabled" VerticalScrollBarVisibility="Auto">
+                    <StackPanel Margin="20" Spacing="20">
+                        <!-- 功能说明 -->
+                        <Border Background="#F0F9FF" CornerRadius="6" Padding="15"
+                                BorderBrush="#0EA5E9" BorderThickness="2">
+                            <StackPanel Spacing="10">
+                                <TextBlock Text="Changelist总结生成器"
+                                           FontWeight="Bold" FontSize="16" Foreground="#0369A1" />
+                                <TextBlock Text="根据changelist号或changelist列表，智能分析提交记录和文件变更，生成结构化的总结报告"
+                                           FontSize="12" Opacity="0.8" TextWrapping="Wrap" />
+                                <TextBlock Text="支持格式：单个数字、逗号分隔、空格分隔、范围（如12345-12347）"
+                                           FontSize="11" Opacity="0.7" />
+                            </StackPanel>
+                        </Border>
+
+                        <!-- 输入区域 -->
+                        <Border Background="#FAFAFA" CornerRadius="6" Padding="15"
+                                BorderBrush="#D1D5DB" BorderThickness="1">
+                            <StackPanel Spacing="10">
+                                <TextBlock Text="Changelist输入:" FontWeight="SemiBold" />
+                                <TextBox Text="{Binding ChangelistInput, Mode=TwoWay}"
+                                         Watermark="输入changelist号或列表，例如: 12345 或 12345,12346-12348,12350"
+                                         Height="60" TextWrapping="Wrap" AcceptsReturn="True"
+                                         FontFamily="Consolas" FontSize="13"
+                                         Padding="10" />
+
+                                <Grid>
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="*" />
+                                        <ColumnDefinition Width="Auto" />
+                                    </Grid.ColumnDefinitions>
+
+                                    <!-- 输入示例 -->
+                                    <TextBlock Grid.Column="0" Text="💡 提示：支持混合输入，如 12345,12347-12349,12350"
+                                               FontSize="11" Opacity="0.7" VerticalAlignment="Center" />
+                                </Grid>
+                            </StackPanel>
+                        </Border>
+
+                        <!-- 生成按钮 -->
+                        <StackPanel Spacing="10" HorizontalAlignment="Center">
+                            <Button Content="生成总结报告"
+                                    Command="{Binding GenerateSummaryCommand}"
+                                    HorizontalAlignment="Center"
+                                    Padding="40,15" FontSize="16"
+                                    Background="#0EA5E9" Foreground="White"
+                                    IsEnabled="{Binding !IsProcessingSummary}" />
+
+                            <!-- 加载指示器 -->
+                            <TextBlock Text="{Binding SummaryStatus}"
+                                       HorizontalAlignment="Center"
+                                       FontSize="14"
+                                       Foreground="#0369A1"
+                                       IsVisible="{Binding IsProcessingSummary}" />
+                        </StackPanel>
+
+                        <!-- 状态显示 -->
+                        <Border Background="#F0F9FF" CornerRadius="6" Padding="15"
+                                BorderBrush="#0EA5E9" BorderThickness="1"
+                                IsVisible="{Binding IsProcessingSummary}">
+                            <StackPanel Spacing="5">
+                                <ProgressBar IsIndeterminate="True" Height="4" />
+                                <TextBlock Text="{Binding SummaryStatus}"
+                                           HorizontalAlignment="Center"
+                                           FontSize="12" Opacity="0.8" />
+                            </StackPanel>
+                        </Border>
+
+                        <!-- 结果显示 -->
+                        <Border Background="#F5F5F5"
+                                CornerRadius="8" Padding="20"
+                                BorderBrush="#E0E0E0" BorderThickness="1">
+                            <Grid>
+                                <Grid.RowDefinitions>
+                                    <RowDefinition Height="Auto" />
+                                    <RowDefinition Height="*" />
+                                </Grid.RowDefinitions>
+
+                                <!-- 结果标题 -->
+                                <TextBlock Grid.Row="0" Text="总结报告 (可选择复制):"
+                                           FontWeight="SemiBold" Margin="0,0,0,10" />
+
+                                <!-- 可选择的文本框 -->
+                                <TextBox Grid.Row="1"
+                                         Text="{Binding SummaryResult}"
+                                         IsReadOnly="True"
+                                         TextWrapping="Wrap"
+                                         AcceptsReturn="True"
+                                         ScrollViewer.VerticalScrollBarVisibility="Auto"
+                                         ScrollViewer.HorizontalScrollBarVisibility="Disabled"
+                                         FontFamily="Consolas" FontSize="13"
+                                         Background="White"
+                                         BorderThickness="1"
+                                         BorderBrush="#D1D5DB"
+                                         Padding="15"
+                                         MinHeight="300" />
+                            </Grid>
+                        </Border>
+                    </StackPanel>
+                </ScrollViewer>
+            </TabItem>
+
+            <TabItem Header="⚙️ 设置">
+                <ScrollViewer>
+                    <Grid Margin="0,20,0,0">
+                        <Grid.RowDefinitions>
+                            <RowDefinition Height="Auto" />
+                            <RowDefinition Height="Auto" />
+                        </Grid.RowDefinitions>
+
+                        <!-- 设置说明 -->
+                        <Border Grid.Row="0" Background="#F8FAFC" CornerRadius="6" Padding="15" Margin="0,0,0,20"
+                                BorderBrush="#CBD5E1" BorderThickness="1">
+                            <StackPanel Spacing="10">
+                                <TextBlock Text="Perforce设置"
+                                           FontWeight="Bold" FontSize="16" Foreground="#334155" />
+                                <TextBlock Text="配置Perforce连接和相关选项"
+                                           FontSize="12" Opacity="0.8" />
+                            </StackPanel>
+                        </Border>
+
+                        <!-- 设置项 -->
+                        <Border Grid.Row="1" Background="#FAFAFA" CornerRadius="6" Padding="20"
+                                BorderBrush="#D1D5DB" BorderThickness="1">
+                            <StackPanel Spacing="20">
+                                <!-- Perforce连接状态 -->
+                                <StackPanel Spacing="10">
+                                    <TextBlock Text="连接状态" FontWeight="SemiBold" FontSize="14" />
+                                    <Border Background="#F0F9FF" CornerRadius="4" Padding="10"
+                                            BorderBrush="#0EA5E9" BorderThickness="1">
+                                        <StackPanel Spacing="5">
+                                            <TextBlock Text="{Binding ConnectionStatus}"
+                                                       FontSize="12" />
+                                            <Button Content="重新连接"
+                                                    Command="{Binding TestConnectionCommand}"
+                                                    HorizontalAlignment="Left"
+                                                    Padding="10,5"
+                                                    FontSize="12" />
+                                        </StackPanel>
+                                    </Border>
+                                </StackPanel>
+
+                                <!-- 当前客户端信息 -->
+                                <StackPanel Spacing="10" IsVisible="{Binding SelectedClient}">
+                                    <TextBlock Text="当前客户端信息" FontWeight="SemiBold" FontSize="14" />
+                                    <Border Background="#F8F8F8" CornerRadius="4" Padding="10">
+                                        <StackPanel Spacing="3">
+                                            <TextBlock Text="{Binding SelectedClient.Name, StringFormat='名称: {0}'}"
+                                                       FontSize="12" />
+                                            <TextBlock Text="{Binding SelectedClient.Root, StringFormat='根目录: {0}'}"
+                                                       FontSize="12" />
+                                            <TextBlock Text="{Binding SelectedClient.Owner, StringFormat='所有者: {0}'}"
+                                                       FontSize="12" />
+                                        </StackPanel>
+                                    </Border>
+                                </StackPanel>
+
+                                <!-- 其他设置项占位 -->
+                                <StackPanel Spacing="10">
+                                    <TextBlock Text="其他设置" FontWeight="SemiBold" FontSize="14" />
+                                    <TextBlock Text="更多配置选项将在后续版本中添加..."
+                                               FontSize="12" Opacity="0.6" />
+                                </StackPanel>
+                            </StackPanel>
+                        </Border>
+                    </Grid>
+                </ScrollViewer>
+            </TabItem>
+        </TabControl>
+    </Grid>
+</UserControl>

@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.Linq;
+using System.Text;
 using System.Threading.Tasks;
 using GameDevToolkit.Models;
 
@@ -9,6 +10,8 @@ namespace GameDevToolkit.Services;
 
 public class PerforceService
 {
+    private string? _cachedCurrentUser = null;
+
     /// <summary>
     /// 获取指定文件的最新changelist ID
     /// </summary>
@@ -123,8 +126,13 @@ public class PerforceService
 
         try
         {
-            // 首先获取当前用户名
-            var currentUser = await GetCurrentUserAsync();
+            // 使用缓存的用户名，如果没有则获取并缓存
+            if (string.IsNullOrEmpty(_cachedCurrentUser))
+            {
+                _cachedCurrentUser = await GetCurrentUserAsync();
+            }
+
+            var currentUser = _cachedCurrentUser;
             if (string.IsNullOrEmpty(currentUser))
             {
                 return clients;
@@ -177,48 +185,7 @@ public class PerforceService
         return clients;
     }
 
-    /// <summary>
-    /// 获取当前Perforce用户名
-    /// </summary>
-    private async Task<string?> GetCurrentUserAsync()
-    {
-        try
-        {
-            var startInfo = new ProcessStartInfo
-            {
-                FileName = "p4",
-                Arguments = "user -o",
-                UseShellExecute = false,
-                RedirectStandardOutput = true,
-                RedirectStandardError = true,
-                CreateNoWindow = true
-            };
-
-            using var process = Process.Start(startInfo);
-            if (process == null) return null;
-
-            var output = await process.StandardOutput.ReadToEndAsync();
-            await process.WaitForExitAsync();
-
-            if (process.ExitCode != 0) return null;
-
-            var lines = output.Split('\n', StringSplitOptions.RemoveEmptyEntries);
-            foreach (var line in lines)
-            {
-                if (line.StartsWith("User:"))
-                {
-                    return line.Substring("User:".Length).Trim();
-                }
-            }
-
-            return null;
-        }
-        catch
-        {
-            return null;
-        }
-    }
-
+    
     /// <summary>
     /// 解析客户端行信息
     /// </summary>
@@ -411,6 +378,98 @@ public class PerforceService
         catch
         {
             return false;
+        }
+    }
+
+    /// <summary>
+    /// 设置P4客户端
+    /// </summary>
+    private async Task SetClientAsync(string clientName)
+    {
+        try
+        {
+            var startInfo = new ProcessStartInfo
+            {
+                FileName = "p4",
+                Arguments = $"client -c {clientName}",
+                UseShellExecute = false,
+                RedirectStandardOutput = true,
+                RedirectStandardError = true,
+                CreateNoWindow = true
+            };
+
+            using var process = Process.Start(startInfo);
+            if (process != null)
+            {
+                await process.WaitForExitAsync();
+            }
+        }
+        catch
+        {
+            // 忽略设置客户端的错误
+        }
+    }
+
+    /// <summary>
+    /// 获取当前Perforce用户名（使用缓存）
+    /// </summary>
+    public async Task<string?> GetCurrentUserAsync()
+    {
+        try
+        {
+            // 使用缓存的用户名，如果没有则获取并缓存
+            if (string.IsNullOrEmpty(_cachedCurrentUser))
+            {
+                _cachedCurrentUser = await GetCurrentUserInternalAsync();
+            }
+
+            return _cachedCurrentUser;
+        }
+        catch
+        {
+            return null;
+        }
+    }
+
+    /// <summary>
+    /// 获取当前Perforce用户名（内部实现）
+    /// </summary>
+    private async Task<string?> GetCurrentUserInternalAsync()
+    {
+        try
+        {
+            var startInfo = new ProcessStartInfo
+            {
+                FileName = "p4",
+                Arguments = "user -o",
+                UseShellExecute = false,
+                RedirectStandardOutput = true,
+                RedirectStandardError = true,
+                CreateNoWindow = true
+            };
+
+            using var process = Process.Start(startInfo);
+            if (process == null) return null;
+
+            var output = await process.StandardOutput.ReadToEndAsync();
+            await process.WaitForExitAsync();
+
+            if (process.ExitCode != 0) return null;
+
+            var lines = output.Split('\n', StringSplitOptions.RemoveEmptyEntries);
+            foreach (var line in lines)
+            {
+                if (line.StartsWith("User:"))
+                {
+                    return line.Substring("User:".Length).Trim();
+                }
+            }
+
+            return null;
+        }
+        catch
+        {
+            return null;
         }
     }
 
@@ -631,7 +690,7 @@ public class PerforceService
                     {
                         return (depotPath, ex.Message, null, null, null, null);
                     }
-                }).ToArray();
+                });
 
                 // 等待当前批次完成
                 var batchResults = await Task.WhenAll(batchTasks);
@@ -655,15 +714,15 @@ public class PerforceService
                         {
                             onResult?.Invoke($"📝 TS文件最新Changelist: {result.Changelist}");
 
-                            // 步骤4: 将changelist写入TS文件
-                            var writeSuccess = await WriteChangelistToTsFileAsync(result.TSPath!, result.Changelist, null);
+                            // 步骤4: 将翻译详情写入TS文件
+                            var writeSuccess = await WriteChangelistToTsFileAsync(result.TSPath!, result.DepotPath, result.Changelist!, null);
                             if (writeSuccess)
                             {
-                                onResult?.Invoke($"💾 已将Changelist {result.Changelist} 写入文件");
+                                onResult?.Invoke($"💾 已将翻译详情写入文件");
                             }
                             else
                             {
-                                onResult?.Invoke($"⚠️ 写入Changelist到文件失败: {System.IO.Path.GetFileName(result.TSPath!)}");
+                                onResult?.Invoke($"⚠️ 写入翻译详情到文件失败: {System.IO.Path.GetFileName(result.TSPath!)}");
                             }
                         }
                         else
@@ -745,17 +804,18 @@ public class PerforceService
     }
 
     /// <summary>
-    /// 将changelist号写入TS文件开头作为注释
+    /// 将翻译详情写入TS文件开头作为注释
     /// </summary>
     /// <param name="filePath">TS文件路径</param>
-    /// <param name="changelist">Changelist号</param>
+    /// <param name="csDepotPath">C#文件的DepotPath</param>
+    /// <param name="changelist">TS文件的changelist号</param>
     /// <param name="onResult">实时输出回调函数</param>
     /// <returns>是否写入成功</returns>
-    public async Task<bool> WriteChangelistToTsFileAsync(string filePath, string changelist, Action<string>? onResult = null)
+    public async Task<bool> WriteChangelistToTsFileAsync(string filePath, string csDepotPath, string changelist, Action<string>? onResult = null)
     {
         try
         {
-            onResult?.Invoke($"📝 开始将Changelist {changelist} 写入文件: {System.IO.Path.GetFileName(filePath)}");
+            onResult?.Invoke($"📝 开始将翻译详情写入文件: {System.IO.Path.GetFileName(filePath)}");
 
             // 检查文件是否存在
             if (!System.IO.File.Exists(filePath))
@@ -764,49 +824,254 @@ public class PerforceService
                 return false;
             }
 
-            // 读取文件内容
-            var content = await System.IO.File.ReadAllTextAsync(filePath);
-            var lines = content.Split('\n').ToList();
+            // 按行读取TS文件内容，检查是否已有翻译详情
+            var tsLines = new List<string>();
+            var hasTranslationDetails = false;
+            var translationDetailsStartIndex = -1;
+            var translationDetailsEndIndex = -1;
+            var lineCount = 0;
+            var inCommentBlock = false;
 
-            // 查找是否已经存在changelist注释
-            var existingChangelistIndex = lines.FindIndex(line => line.Trim().StartsWith("// Changelist:"));
-
-            if (existingChangelistIndex >= 0)
+            try
             {
-                // 更新现有的changelist注释
-                lines[existingChangelistIndex] = $"// Changelist: {changelist}";
-                onResult?.Invoke($"🔄 更新现有Changelist注释: {changelist}");
+                using var reader = new System.IO.StreamReader(filePath);
+                string? line;
+
+                while ((line = await reader.ReadLineAsync()) != null)
+                {
+                    tsLines.Add(line);
+                    lineCount++;
+
+                    var trimmedLine = line.Trim();
+                    var lowerLine = trimmedLine.ToLower();
+
+                    // 检测注释块开始 /**
+                    if (trimmedLine.StartsWith("/**") && !hasTranslationDetails)
+                    {
+                        inCommentBlock = true;
+                        translationDetailsStartIndex = lineCount - 1;
+                    }
+                    // 在注释块内检查是否包含翻译详情
+                    else if (inCommentBlock)
+                    {
+                        if (lowerLine.Contains("翻译详情") || lowerLine.Contains("translation details"))
+                        {
+                            hasTranslationDetails = true;
+                        }
+                        // 检测注释块结束 */
+                        if (trimmedLine.EndsWith("*/"))
+                        {
+                            inCommentBlock = false;
+                            if (hasTranslationDetails)
+                            {
+                                translationDetailsEndIndex = lineCount - 1;
+                            }
+                            else
+                            {
+                                // 如果不是翻译详情注释块，重置开始索引
+                                translationDetailsStartIndex = -1;
+                            }
+                        }
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                onResult?.Invoke($"❌ 读取TS文件失败: {filePath} - {ex.Message}");
+                return false;
+            }
+
+            // 解析现有的翻译详情（如果存在）
+            var existingTranslator = "";
+            var existingCsPath = "";
+            if (hasTranslationDetails && translationDetailsStartIndex >= 0)
+            {
+                onResult?.Invoke($"🔍 发现已有翻译详情，解析现有信息...");
+                ParseExistingTranslationDetails(tsLines, translationDetailsStartIndex, translationDetailsEndIndex, out existingTranslator, out existingCsPath);
+                onResult?.Invoke($"📝 现有信息: 翻译人={existingTranslator}, 路径={existingCsPath}");
             }
             else
             {
-                // 在文件开头添加新的changelist注释
+                onResult?.Invoke($"📝 文件暂无翻译详情，将新增...");
+            }
+
+            // 计算对应的C#文件路径
+            var csFilePath = filePath.Replace("\\TypeScript\\Src\\", "\\CSharpScript\\CSharpScript\\").Replace(".ts", ".cs");
+
+            // 检查C#文件是否存在并统计TODO
+            var todoCount = 0;
+            if (System.IO.File.Exists(csFilePath))
+            {
+                try
+                {
+                    using var csReader = new System.IO.StreamReader(csFilePath);
+                    string? csLine;
+
+                    while ((csLine = await csReader.ReadLineAsync()) != null)
+                    {
+                        // 检查整个文件的所有行，不限制行数
+                        if (System.Text.RegularExpressions.Regex.IsMatch(csLine, @"//\s*todo|#\s*todo|/\*\s*todo\s*\*/|\*\s*todo", System.Text.RegularExpressions.RegexOptions.IgnoreCase))
+                        {
+                            todoCount++;
+                        }
+                    }
+
+                    onResult?.Invoke($"🔍 检查C#文件: {System.IO.Path.GetFileName(csFilePath)} (共检查整个文件)");
+                }
+                catch (Exception ex)
+                {
+                    onResult?.Invoke($"⚠️ 读取C#文件失败，默认认为已翻译完成: {csFilePath} - {ex.Message}");
+                }
+            }
+            else
+            {
+                onResult?.Invoke($"⚠️ 找不到对应的C#文件: {csFilePath}，默认认为已翻译完成");
+            }
+
+            var status = todoCount > 0 ? $"未翻译完成 (共{todoCount}个todo)" : "已翻译完成";
+            onResult?.Invoke($"📊 翻译状态: {status}");
+
+            // 获取当前用户
+            var currentUser = await GetCurrentUserAsync() ?? "Unknown";
+
+            // 生成翻译详情注释
+            var translationDetails = GenerateTranslationDetails(currentUser, csDepotPath, status, changelist);
+
+            // 处理翻译详情的替换或新增
+            if (hasTranslationDetails && translationDetailsStartIndex >= 0)
+            {
+                // 替换现有的翻译详情块
+                var startIdx = translationDetailsStartIndex;
+                var endIdx = translationDetailsEndIndex >= 0 ? translationDetailsEndIndex : translationDetailsStartIndex;
+
+                // 删除旧的翻译详情块
+                for (int i = endIdx; i >= startIdx; i--)
+                {
+                    if (i < tsLines.Count)
+                    {
+                        tsLines.RemoveAt(i);
+                    }
+                }
+
+                // 在相同位置插入新的翻译详情
+                tsLines.Insert(startIdx, translationDetails);
+                onResult?.Invoke($"🔄 替换现有翻译详情 (第{startIdx + 1}行)");
+            }
+            else
+            {
+                // 新增翻译详情注释
                 var insertIndex = 0;
 
                 // 跳过可能的文件头注释（如shebang或空行）
-                while (insertIndex < lines.Count &&
-                      (lines[insertIndex].Trim().StartsWith("///") ||
-                       lines[insertIndex].Trim().StartsWith("/*") ||
-                       lines[insertIndex].Trim().StartsWith("*") ||
-                       string.IsNullOrWhiteSpace(lines[insertIndex])))
+                while (insertIndex < tsLines.Count &&
+                      (tsLines[insertIndex].Trim().StartsWith("///") ||
+                       tsLines[insertIndex].Trim().StartsWith("/*") ||
+                       tsLines[insertIndex].Trim().StartsWith("*") ||
+                       string.IsNullOrWhiteSpace(tsLines[insertIndex])))
                 {
                     insertIndex++;
                 }
 
-                lines.Insert(insertIndex, $"// Changelist: {changelist}");
-                onResult?.Invoke($"➕ 在第{insertIndex + 1}行添加Changelist注释: {changelist}");
+                tsLines.Insert(insertIndex, translationDetails);
+                onResult?.Invoke($"➕ 在第{insertIndex + 1}行添加翻译详情注释");
             }
 
             // 写回文件
-            await System.IO.File.WriteAllTextAsync(filePath, string.Join('\n', lines));
+            await System.IO.File.WriteAllTextAsync(filePath, string.Join('\n', tsLines));
 
-            onResult?.Invoke($"✅ 成功写入Changelist {changelist} 到文件: {System.IO.Path.GetFileName(filePath)}");
+            onResult?.Invoke($"✅ 成功写入翻译详情到文件: {System.IO.Path.GetFileName(filePath)}");
             return true;
         }
         catch (Exception ex)
         {
-            onResult?.Invoke($"❌ 写入Changelist到文件失败: {filePath} - {ex.Message}");
+            onResult?.Invoke($"❌ 写入翻译详情到文件失败: {filePath} - {ex.Message}");
             return false;
         }
+    }
+
+    /// <summary>
+    /// 检查文件前N行是否包含翻译详情注释
+    /// </summary>
+    private bool HasTranslationDetailsInFirstLines(List<string> lines, int lineCount)
+    {
+        var checkLines = lines.Take(Math.Min(lineCount, lines.Count));
+        var combinedText = string.Join("\n", checkLines).ToLower();
+
+        return combinedText.Contains("翻译详情") ||
+               combinedText.Contains("translation details") ||
+               combinedText.Contains("翻译人") ||
+               combinedText.Contains("对应路径");
+    }
+
+    /// <summary>
+    /// 解析现有的翻译详情注释
+    /// </summary>
+    private void ParseExistingTranslationDetails(List<string> lines, int startIndex, int endIndex, out string translator, out string csPath)
+    {
+        translator = "";
+        csPath = "";
+
+        try
+        {
+            var endIdx = endIndex >= 0 ? endIndex : Math.Min(startIndex + 10, lines.Count - 1);
+
+            for (int i = startIndex; i <= endIdx && i < lines.Count; i++)
+            {
+                var line = lines[i].Trim();
+
+                // 解析翻译人
+                if (line.Contains("翻译人:") || line.Contains("翻译人："))
+                {
+                    var match = System.Text.RegularExpressions.Regex.Match(line, @"翻译人[：:]\s*(.+)");
+                    if (match.Success)
+                    {
+                        translator = match.Groups[1].Value.Trim();
+                    }
+                }
+                // 解析对应路径
+                else if (line.Contains("对应路径:") || line.Contains("对应路径："))
+                {
+                    var match = System.Text.RegularExpressions.Regex.Match(line, @"对应路径[：:]\s*(.+)");
+                    if (match.Success)
+                    {
+                        csPath = match.Groups[1].Value.Trim();
+                    }
+                }
+            }
+        }
+        catch (Exception ex)
+        {
+            // 解析失败时保持空值
+            System.Diagnostics.Debug.WriteLine($"解析翻译详情失败: {ex.Message}");
+        }
+    }
+
+    /// <summary>
+    /// 统计文件中TODO注释的数量
+    /// </summary>
+    private int CountTodoComments(string content)
+    {
+        // 匹配各种TODO注释格式
+        var todoPattern = @"//\s*todo|#\s*todo|/\*\s*todo\s*\*/|\*\s*todo";
+        var matches = System.Text.RegularExpressions.Regex.Matches(content, todoPattern, System.Text.RegularExpressions.RegexOptions.IgnoreCase);
+        return matches.Count;
+    }
+
+    /// <summary>
+    /// 生成翻译详情注释字符串
+    /// </summary>
+    private string GenerateTranslationDetails(string translator, string csDepotPath, string status, string tsChangelist)
+    {
+        var details = new StringBuilder();
+        details.AppendLine("/**");
+        details.AppendLine(" * ---翻译详情---");
+        details.AppendLine($" * 翻译人: {translator}");
+        details.AppendLine($" * 对应路径: {csDepotPath}");
+        details.AppendLine($" * 状态: {status}");
+        details.AppendLine($" * 其他: 对应TS文件版本: {tsChangelist}");
+        details.AppendLine(" */");
+
+        return details.ToString();
     }
 
     /// <summary>
@@ -853,6 +1118,164 @@ public class PerforceService
         }
     }
 
+    /// <summary>
+    /// 获取changelist详细信息
+    /// </summary>
+    /// <param name="clientName">P4 客户端名</param>
+    /// <param name="changeNumber">changelist号</param>
+    /// <returns>changelist详细信息</returns>
+    public async Task<(bool, ChangelistInfo?, string)> GetChangelistDetailsAsync(string clientName, int changeNumber)
+    {
+        try
+        {
+            // 首先检查Perforce连接状态
+            var isConnected = await IsConnectedAsync();
+            if (!isConnected)
+            {
+                return (false, null, "Perforce连接失败");
+            }
+
+            // 设置P4客户端
+            await SetClientAsync(clientName);
+
+            // 使用p4 describe命令获取changelist详细信息
+            var startInfo = new ProcessStartInfo
+            {
+                FileName = "p4",
+                Arguments = $"describe -s {changeNumber}",
+                RedirectStandardOutput = true,
+                RedirectStandardError = true,
+                UseShellExecute = false,
+                CreateNoWindow = true,
+                StandardOutputEncoding = System.Text.Encoding.UTF8,
+                StandardErrorEncoding = System.Text.Encoding.UTF8
+            };
+
+            using var process = Process.Start(startInfo);
+            if (process == null)
+                return (false, null, "无法启动p4进程");
+
+            var output = await process.StandardOutput.ReadToEndAsync();
+            var error = await process.StandardError.ReadToEndAsync();
+            await process.WaitForExitAsync();
+
+            if (process.ExitCode != 0)
+            {
+                return (false, null, error ?? "查询失败");
+            }
+
+            // 解析输出
+            var changelistInfo = ParseChangelistDescribeOutput(output, changeNumber);
+            return (true, changelistInfo, "");
+        }
+        catch (Exception ex)
+        {
+            return (false, null, ex.Message);
+        }
+    }
+
+    /// <summary>
+    /// 解析p4 describe命令的输出
+    /// </summary>
+    private ChangelistInfo ParseChangelistDescribeOutput(string output, int changeNumber)
+    {
+        var lines = output.Split('\n', StringSplitOptions.RemoveEmptyEntries);
+        var changelistInfo = new ChangelistInfo
+        {
+            ChangeNumber = changeNumber,
+            Files = new List<ChangelistFile>()
+        };
+
+        var currentSection = "description";
+        var descriptionLines = new List<string>();
+
+        foreach (var line in lines)
+        {
+            var trimmedLine = line.Trim();
+
+            if (trimmedLine.StartsWith("Change"))
+            {
+                // 解析changelist基本信息
+                ParseChangeInfo(trimmedLine, changelistInfo);
+            }
+            else if (trimmedLine.StartsWith("Client"))
+            {
+                var client = trimmedLine.Substring(7).Trim();
+                changelistInfo.Client = client;
+            }
+            else if (trimmedLine.StartsWith("User"))
+            {
+                var user = trimmedLine.Substring(5).Trim();
+                changelistInfo.Author = user;
+            }
+            else if (trimmedLine.StartsWith("Status"))
+            {
+                var status = trimmedLine.Substring(7).Trim();
+                changelistInfo.Status = status;
+            }
+            else if (trimmedLine.StartsWith("Date"))
+            {
+                var date = trimmedLine.Substring(5).Trim();
+                changelistInfo.Date = date;
+            }
+            else if (trimmedLine.StartsWith("Affected files"))
+            {
+                currentSection = "files";
+            }
+            else if (currentSection == "description" && !string.IsNullOrWhiteSpace(trimmedLine))
+            {
+                descriptionLines.Add(trimmedLine);
+            }
+            else if (currentSection == "files" && trimmedLine.StartsWith("..."))
+            {
+                var fileInfo = ParseFileInfo(trimmedLine);
+                if (fileInfo != null)
+                {
+                    changelistInfo.Files.Add(fileInfo);
+                }
+            }
+        }
+
+        changelistInfo.Description = string.Join("\n", descriptionLines).Trim();
+
+        return changelistInfo;
+    }
+
+    /// <summary>
+    /// 解析changelist基本信息行
+    /// </summary>
+    private void ParseChangeInfo(string line, ChangelistInfo changelistInfo)
+    {
+        // 格式: Change 12345 on 2023/12/25 by author@client 'description'
+        var match = System.Text.RegularExpressions.Regex.Match(line, @"Change (\d+) on (.+?) by (.+?)@(.+?) '(.*)'");
+        if (match.Success)
+        {
+            changelistInfo.ChangeNumber = int.Parse(match.Groups[1].Value);
+            changelistInfo.Date = match.Groups[2].Value;
+            changelistInfo.Author = match.Groups[3].Value;
+            changelistInfo.Client = match.Groups[4].Value;
+            changelistInfo.Description = match.Groups[5].Value;
+        }
+    }
+
+    /// <summary>
+    /// 解析文件信息行
+    /// </summary>
+    private ChangelistFile? ParseFileInfo(string line)
+    {
+        // 格式: ... #1 edit //depot/path/file.cs
+        var match = System.Text.RegularExpressions.Regex.Match(line, @"...\s+#(\d+)\s+(\w+)\s+(.+)");
+        if (match.Success)
+        {
+            return new ChangelistFile
+            {
+                Revision = match.Groups[1].Value,
+                Action = match.Groups[2].Value,
+                DepotPath = match.Groups[3].Value
+            };
+        }
+        return null;
+    }
 }
 
 /// <summary>
